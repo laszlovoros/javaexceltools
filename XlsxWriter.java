@@ -40,6 +40,7 @@ import org.dom4j.io.XMLWriter;
 import org.dom4j.io.OutputFormat;
 import java.io.IOException;
 import java.io.Writer;
+import java.io.BufferedReader;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import javax.xml.stream.XMLOutputFactory;
@@ -59,24 +60,25 @@ public class XlsxWriter {
     static String DATETIME="DT";
     static String PERCENT="P";
     private String textFile="c:/tmp/forras.txt";
-    private String outFile="c:/tmp/out.xlsx";
-    private String workLibrary="c:/tmp";
-    private String xlsxTemplate="c:/tmp/null.xlsx";
+    private String outFile=null;
+    private String workLibrary=null;
+    private String xlsxTemplate=null;
     private String separator="¤";
     private String logFile=null;
     private String charSet=null;
     private String sheetId=null;
-    private String sheetName="LaciBacsi";
+    private String sheetName=null;
     private boolean logEnabled=true;
     private PrintWriter log=null;
-    private boolean sheetOverwriting=false;
+    private boolean sheetOverwriting=false,generatedByThis=false;
     private LinkedList<Element> sheetList;
     private boolean analogSys=false;
     private int fontCount=2,borderCount=1,fillCount=1,xfsCount=2,numFmtCount=2;
-    private String[] columnNames,columnTypes;
+    private String[] columnNames=null,columnTypes=null;
     private OutputStreamWriter sheetFileWriter;
-    XMLStreamWriter sheetWriter;
-    private int rowCount=0,rowCounter=1,colCounter=1;
+    private XMLStreamWriter sheetWriter;
+    private BufferedReader input=null;
+    private int rowCount=0,rowCounter=1,columnCount=0,colCounter=1;
     static String ABC="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private String title=null,subtitle=null;
 
@@ -87,30 +89,38 @@ public class XlsxWriter {
         if (args[i].toLowerCase().equals("-title")) xw.title=args[i+1];
         if (args[i].toLowerCase().equals("-subtitle")) xw.subtitle=args[i+1];
         if (args[i].toLowerCase().equals("-filename")) xw.outFile=args[i+1];
+        if (args[i].toLowerCase().equals("-columncount")) xw.columnCount=Integer.parseInt(args[i+1]);
         if (args[i].toLowerCase().equals("-rowcount")) xw.rowCount=Integer.parseInt(args[i+1]);
         if (args[i].toLowerCase().equals("-templatefile")) xw.xlsxTemplate=args[i+1];
 	if (args[i].toLowerCase().equals("-logfile")) xw.logFile=args[i+1];
 	if (args[i].toLowerCase().equals("-workpath")) xw.workLibrary=args[i+1];
-	if (args[i].toLowerCase().equals("-charset")) xw.charSet=args[i+1];
+	if (args[i].toLowerCase().equals("-datasourcefile")) xw.textFile=args[i+1];
+        if (args[i].toLowerCase().equals("-charset")) xw.charSet=args[i+1];
 	if (args[i].toLowerCase().equals("-separator")) xw.separator=args[i+1];
 	if (args[i].toLowerCase().equals("-sheetname")) xw.sheetName=args[i+1];
 	if (args[i].toLowerCase().equals("-log")) xw.logEnabled=args[i+1].toLowerCase().equals("yes") ? true:false;
      }
      xw.init();
     }
-  public void setParams(String paramName,String paramValue){
-        if (paramName.toLowerCase().equals("title")) this.title=paramValue;
-        if (paramName.toLowerCase().equals("subtitle")) this.subtitle=paramValue;
-        if (paramName.toLowerCase().equals("filename")) this.outFile=paramValue;
-        if (paramName.toLowerCase().equals("rowcount")) this.rowCount=Integer.parseInt(paramValue);
-        if (paramName.toLowerCase().equals("templatefile")) this.xlsxTemplate=paramValue;
-	if (paramName.toLowerCase().equals("logfile")) this.logFile=paramValue;
-	if (paramName.toLowerCase().equals("workpath")) this.workLibrary=paramValue;
-	if (paramName.toLowerCase().equals("charset")) this.charSet=paramValue;
-	if (paramName.toLowerCase().equals("separator")) this.separator=paramValue;
-	if (paramName.toLowerCase().equals("sheetname")) this.sheetName=paramValue;
-	if (paramName.toLowerCase().equals("log")) this.logEnabled=paramValue.toLowerCase().equals("yes") ? true:false;
-       }  
+  public void setParams(String[] params){
+      String paramName=params[0];
+      String paramValue=null;
+      if (params.length>1)paramValue=params[1];
+      log(paramName+":"+paramValue);
+      if (paramName.toLowerCase().equals("title")) this.title=paramValue;
+      if (paramName.toLowerCase().equals("subtitle")) this.subtitle=paramValue;
+      if (paramName.toLowerCase().equals("filename")) this.outFile=paramValue;
+      if (paramName.toLowerCase().equals("rowcount")) this.rowCount=Integer.parseInt(paramValue);
+      if (paramName.toLowerCase().equals("columncount")) this.columnCount=Integer.parseInt(paramValue);
+      if (paramName.toLowerCase().equals("templatefile")) this.xlsxTemplate=paramValue;
+      if (paramName.toLowerCase().equals("logfile")) this.logFile=paramValue;
+      if (paramName.toLowerCase().equals("datasourcefile")) this.textFile=paramValue;
+      if (paramName.toLowerCase().equals("workpath")) this.workLibrary=paramValue;
+      if (paramName.toLowerCase().equals("charset")) this.charSet=paramValue;
+      if (paramName.toLowerCase().equals("separator")) this.separator=paramValue;
+      if (paramName.toLowerCase().equals("sheetname")) this.sheetName=paramValue;
+      if (paramName.toLowerCase().equals("log")) this.logEnabled=paramValue.toLowerCase().equals("yes") ? true:false;
+      }  
   public void log(String msg){
       if (logEnabled){
       if (log!=null)log.println(msg);
@@ -123,20 +133,16 @@ public class XlsxWriter {
   public void setColumnTypes(String columnTypes,String separator){
       this.columnTypes=columnTypes.split(separator);
   }
-  public void writeHead(){
-      try {
-       Writer fstream = null;
-       BufferedWriter out = null;
-    
-    if (title!=null) rowCount=rowCount+2;
-    if (subtitle!=null) rowCount=rowCount+2;
+  public void startSheet() throws XMLStreamException,IOException{
+      
+    Writer fstream = null;
+    BufferedWriter out = null;
     sheetFileWriter = new OutputStreamWriter(new FileOutputStream(
             new File(workLibrary+"/XlsxWriter/xl/worksheets/sheet"+sheetId+".xml")),
             StandardCharsets.UTF_8);   
        XMLOutputFactory xMLOutputFactory = XMLOutputFactory.newInstance();
           sheetWriter =
             xMLOutputFactory.createXMLStreamWriter(sheetFileWriter);
- 
          sheetWriter.writeStartDocument();
          sheetWriter.writeStartElement("worksheet");
          sheetWriter.writeAttribute("xmlns",
@@ -187,7 +193,20 @@ public class XlsxWriter {
                  sheetWriter.writeAttribute("customWidth","1");
                  sheetWriter.writeEndElement();
              }
-             if (columnTypes[i-1].equals(DATETIME)){
+             else if (columnTypes[i-1].equals(DATETIME)){
+                 if (!kellCols){
+                   sheetWriter.writeStartElement("cols"); 
+                   kellCols=true;
+                 }
+                 sheetWriter.writeStartElement("col");
+                 sheetWriter.writeAttribute("min",""+i);
+                 sheetWriter.writeAttribute("max",""+i);
+                 sheetWriter.writeAttribute("width","19.85546875");
+                 sheetWriter.writeAttribute("bestFit","1");
+                 sheetWriter.writeAttribute("customWidth","1");
+                 sheetWriter.writeEndElement();
+             }
+             else{
                  if (!kellCols){
                    sheetWriter.writeStartElement("cols"); 
                    kellCols=true;
@@ -207,13 +226,13 @@ public class XlsxWriter {
          if (title!=null) {
              sheetWriter.writeStartElement("row");
              sheetWriter.writeAttribute("r",""+rowCounter);
-             sheetWriter.writeAttribute("spans","1:1");
-             sheetWriter.writeAttribute("x14ac:dyDescent","0.25");
+            // sheetWriter.writeAttribute("spans","1:"+columnNames.length);
+            // sheetWriter.writeAttribute("x14ac:dyDescent","0.25");
              colCounter=0;
     	     sheetWriter.writeStartElement("c");
     	     sheetWriter.writeAttribute("r","A"+rowCounter);
     	     sheetWriter.writeAttribute("t","inlineStr");
-    	     sheetWriter.writeAttribute("s",""+(xfsCount-5));
+    	     sheetWriter.writeAttribute("s",""+(xfsCount-6));
     	     sheetWriter.writeStartElement("is");
     	     sheetWriter.writeStartElement("t");
     	     sheetWriter.writeCharacters(title);
@@ -227,8 +246,8 @@ public class XlsxWriter {
          if (subtitle!=null) {
              sheetWriter.writeStartElement("row");
              sheetWriter.writeAttribute("r",""+rowCounter);
-             sheetWriter.writeAttribute("spans","1:1");
-             sheetWriter.writeAttribute("x14ac:dyDescent","0.25");
+             //sheetWriter.writeAttribute("spans","1:"+columnNames.length);
+             //sheetWriter.writeAttribute("x14ac:dyDescent","0.25");
              colCounter=0;
     	     sheetWriter.writeStartElement("c");
     	     sheetWriter.writeAttribute("r","A"+rowCounter);
@@ -245,61 +264,93 @@ public class XlsxWriter {
     	     elvalasztosor=true;
     	     }
          if (elvalasztosor) rowCounter++;
+         startRow();
+         for (int i=0;i<columnNames.length;i++) writeCell(columnNames[i],columnTypes[i],true);
+         endRow();
+  }
+  public void processSheet(){
+      
+      try {
+          columnNames=new String[columnCount];
+          columnTypes=new String[columnCount];
+          for (int i=0;i<columnCount;i++){
+              columnNames[i]=input.readLine();
+              columnTypes[i]=input.readLine();
+          }
+          if (title!=null)rowCount=rowCount+2;
+          if (subtitle!=null)rowCount++;
+          startSheet();
+          writeSheet();
+          endSheet();
       }
       catch(Exception e){
-          e.printStackTrace(log);
+          e.printStackTrace();
       }
   }
+  public void writeSheet() throws XMLStreamException,IOException{
+    String line=input.readLine();
+    while((line!=null)&&(rowCounter<=rowCount)){
+        startRow();
+        for(int i=0;i<columnCount;i++){
+            line=input.readLine();
+            if (line!=null)
+            writeCell(line,columnTypes[i],false);
+            else i=columnCount;
+        }
+        endRow();
+    }
+  }
   
-  public void startRow(){
-  try{
+  public void startRow() throws XMLStreamException{
+  
       sheetWriter.writeStartElement("row");
       sheetWriter.writeAttribute("r",""+rowCounter);
-      sheetWriter.writeAttribute("spans","1:"+(columnNames.length+1));
-      sheetWriter.writeAttribute("x14ac:dyDescent","0.25");
+      //sheetWriter.writeAttribute("spans","1:"+(columnNames.length));
+      //sheetWriter.writeAttribute("x14ac:dyDescent","0.25");
       colCounter=0;
-  }    
-  catch(Exception e){
-      e.printStackTrace(log);
-  }    
+      
   }
 
-  public void endRow(){
+  public void endRow() throws XMLStreamException{
   rowCounter++;
-  try{
-      sheetWriter.writeEndElement();
-  }    
-  catch(Exception e){
-      e.printStackTrace(log);
-  }    
+  sheetWriter.writeEndElement();
   }
-  public void writeDataCell(String textValue){
-  try{
-	     sheetWriter.writeStartElement("c");
-	     sheetWriter.writeAttribute("r",getExcelColumn(colCounter)+rowCounter);
+
+  public void writeCell(String textValue,String fieldType,boolean header)
+  throws XMLStreamException
+  {
+ 
+     sheetWriter.writeStartElement("c");
+     sheetWriter.writeAttribute("r",getExcelColumn(colCounter)+rowCounter);
+     if (fieldType.equals(TEXT)){
 	     sheetWriter.writeAttribute("t","inlineStr");
-	     sheetWriter.writeAttribute("s",""+(xfsCount-4));
+	     if (header)sheetWriter.writeAttribute("s",""+(xfsCount-5));
+             else sheetWriter.writeAttribute("s",""+(xfsCount-4));
 	     sheetWriter.writeStartElement("is");
 	     sheetWriter.writeStartElement("t");
 	     sheetWriter.writeCharacters(textValue);
 	     sheetWriter.writeEndElement();
-	     sheetWriter.writeEndElement();
-	     sheetWriter.writeEndElement();
-	     colCounter++;
-  }    
-  catch(Exception e){
-      e.printStackTrace(log);
-  }    
-  }
+     }
+     else {
+     if (fieldType.equals(DATE))sheetWriter.writeAttribute("s",""+(xfsCount-3));
+     else if (fieldType.equals(DATETIME))sheetWriter.writeAttribute("s",""+(xfsCount-1));
+     else if (fieldType.equals(TIME))sheetWriter.writeAttribute("s",""+(xfsCount-2));
+     sheetWriter.writeStartElement("v");
+     sheetWriter.writeCharacters(""+getDoubleValue(textValue));
+     }
+     sheetWriter.writeEndElement();
+     sheetWriter.writeEndElement();
+     colCounter++;
+   }
   
   public void writeDataCell(double numValue){
   try{
 
      sheetWriter.writeStartElement("c");
      sheetWriter.writeAttribute("r",getExcelColumn(colCounter)+rowCounter);
-     if (columnTypes[colCounter].equals(DATE))sheetWriter.writeAttribute("s",""+(xfsCount-2));
-     else if (columnTypes[colCounter].equals(DATETIME))sheetWriter.writeAttribute("s",""+xfsCount);
-     else if (columnTypes[colCounter].equals(TIME))sheetWriter.writeAttribute("s",""+(xfsCount-1));
+     if (columnTypes[colCounter].equals(DATE))sheetWriter.writeAttribute("s",""+(xfsCount-3));
+     else if (columnTypes[colCounter].equals(DATETIME))sheetWriter.writeAttribute("s",""+(xfsCount-1));
+     else if (columnTypes[colCounter].equals(TIME))sheetWriter.writeAttribute("s",""+(xfsCount-2));
      sheetWriter.writeStartElement("v");
      if (!Double.isNaN(numValue)) sheetWriter.writeCharacters(""+numValue);
      sheetWriter.writeEndElement();
@@ -307,12 +358,12 @@ public class XlsxWriter {
      colCounter++;
   }    
   catch(Exception e){
-      e.printStackTrace(log);
+      e.printStackTrace();
   }    
   }
  
-  public void closeTable(){
-      try{
+  public void endSheet() throws XMLStreamException{
+
          sheetWriter.writeEndElement();
          sheetWriter.writeStartElement("pageMargins");
          sheetWriter.writeAttribute("left","0.7");
@@ -334,37 +385,66 @@ public class XlsxWriter {
 
          sheetWriter.flush();
          sheetWriter.close();
-      }
-      catch(Exception e){
-          e.printStackTrace(log);
-      }
   }
   public void init(){
       try {
+      System.out.println("initializing...");
+      if (textFile==null)
+      input = new BufferedReader(new InputStreamReader(System.in));
+      else input=new BufferedReader(new FileReader(new File(textFile)));
+      if (outFile==null){
+          for(String line=input.readLine();!line.trim().equalsIgnoreCase("</PARAMS>");line=input.readLine()) 
+              setParams(line.split("="));
+      }
       if (logFile!=null)log=new PrintWriter(new FileWriter(logFile));
-      else log=new PrintWriter(System.out);
+      //else log=new PrintWriter(System.out);
+      System.out.println("Creating work folder...");
       File workDir = new File(workLibrary+"/XlsxWriter");
-        if (!workDir.exists()){
-        workDir.mkdirs();
+      if (workDir.exists()){
+        deleteFolder(workDir);
         }
+      workDir.mkdirs();
+      System.out.println("Unzipping...");
       unzipExcelFile(xlsxTemplate);
       xl_workbook();
       docProps_core();
+      //System.out.println("Double:"+getDoubleValue("41630D54FFF68872"));
       if (!sheetOverwriting){
           Content_Types();
           xl_rels_workbook();
           docProps_app();
-          xl_styles();
       }
+      xl_styles();
+      processSheet();
+      input.close();
       if (log!=null){
           log.flush();
           log.close();
       }
       }
       catch(Exception e){
-          e.printStackTrace(log);
+          e.printStackTrace();
       }
   }  
+  private void deleteFolder(File file){
+      for (File subFile : file.listFiles()) {
+         if(subFile.isDirectory()) {
+            deleteFolder(subFile);
+         } else {
+            subFile.delete();
+         }
+      }
+      file.delete();
+   }
+  private String getDoubleValue(String hexString){
+      // hexString = "41630D54FFF68872";
+    try{  
+        return ""+Double.longBitsToDouble(Long.valueOf(hexString,16));
+    }
+    catch(Exception e){
+        return "";
+    }
+  }
   private void createDirectoryFromFilePath(String path){
       String[] darabok=path.split("/");
       String ut=workLibrary+"/XlsxWriter";
@@ -401,7 +481,7 @@ public class XlsxWriter {
           zip.close();
      } catch (IOException ioe) {
          log("There is an IoException Occured :" + ioe);
-         ioe.printStackTrace(log);
+         ioe.printStackTrace();
      }
   }  
   
@@ -414,25 +494,8 @@ public class XlsxWriter {
       inStream.close();
       outStream.close();
   }
-  /*
-  - <HeadingPairs>
-- <vt:vector size="2" baseType="variant">
-- <vt:variant>
-  <vt:lpstr>Munkalapok</vt:lpstr> 
-  </vt:variant>
-- <vt:variant>
-  <vt:i4>2</vt:i4> 
-  </vt:variant>
-  </vt:vector>
-  </HeadingPairs>
-- <TitlesOfParts>
-- <vt:vector size="2" baseType="lpstr">
-  <vt:lpstr>work1</vt:lpstr> 
-  <vt:lpstr>job</vt:lpstr> 
-  </vt:vector>
-  </TitlesOfParts>
-  */
-  private void docProps_app(){
+  
+  private void docProps_app(){//EZ JÓ!!! Node sorrend nem számít!
     try{
     List<Element> elements;
     File ct=new File(workLibrary+"/XlsxWriter/docProps/app.xml");
@@ -479,7 +542,7 @@ public class XlsxWriter {
   <sheet name="job" sheetId="2" r:id="rId2" /> 
   </sheets>
 */ 
-private void xl_workbook(){
+private void xl_workbook(){ // Ez jó!
     sheetList=new LinkedList();
     try{
     File ct=new File(workLibrary+"/XlsxWriter/xl/workbook.xml");
@@ -525,8 +588,9 @@ private void xl_workbook(){
   <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml" /> 
   <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml" /> 
   </Relationships>
+EZ JÓ!!!
 */
-private void xl_rels_workbook(){
+private void xl_rels_workbook(){ //EZ JÓ!!! Node sorrend nem számít!
     try{
     File ct=new File(workLibrary+"/XlsxWriter/xl/_rels/workbook.xml.rels");
     SAXReader reader = new SAXReader();
@@ -565,7 +629,7 @@ private void xl_rels_workbook(){
 
   */
 
-private void Content_Types(){
+private void Content_Types(){ //EZ JÓ!!! Node sorrend nem számít!
     try{
     File ct=new File(workLibrary+"/XlsxWriter/[Content_Types].xml");
     SAXReader reader = new SAXReader();
@@ -594,9 +658,10 @@ private void Content_Types(){
   <dcterms:created xsi:type="dcterms:W3CDTF">2021-02-02T08:00:56Z</dcterms:created> 
   <dcterms:modified xsi:type="dcterms:W3CDTF">2021-02-02T21:33:07Z</dcterms:modified> 
   </cp:coreProperties>
+
 */
 
-private void docProps_core(){
+private void docProps_core(){ //EZ JÓ!!! Node sorrend nem számít!
     try{
     File ct=new File(workLibrary+"/XlsxWriter/docProps/core.xml");
     SAXReader reader = new SAXReader();
@@ -610,16 +675,24 @@ private void docProps_core(){
     Element bejegyzes=root.addElement("dc:creator");
     bejegyzes.addText("AnalogSys");
     }
+    else log("This excel file is created by XlsxWriter!");
     System.getProperty("user.name");
     Element lastModifiedBy=root.element("lastModifiedBy");
-    root.remove(lastModifiedBy);
+    if (lastModifiedBy.getText().contains("XlsxWriter")) {
+        generatedByThis=true;
+        log("This excel file is modified by XlsxWriter!");
+    }
+    else{
+    root.remove(lastModifiedBy); 
     Element lmb=root.addElement("cp:lastModifiedBy");
-    lmb.addText(System.getProperty("user.name"));
+    lmb.addText(System.getProperty("user.name")+" by XlsxWriter");
+    }
     Date date = new Date();  
     SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssz");  
+    root.remove(root.element("modified"));
     Element modify=root.addElement("dcterms:modified")
     .addAttribute("xsi:type","dcterms:W3CDTF");
-    modify.addText(formatter.format(date));
+    modify.addText(formatter.format(date).replaceAll("CET","Z"));
     OutputFormat format = OutputFormat.createPrettyPrint();
     XMLWriter writer;
     FileWriter fw=new FileWriter(ct);
@@ -632,7 +705,7 @@ private void docProps_core(){
     } 
     
 }
-
+// az fxstyle index nullától indul
 private void xl_styles(){
     try{
        
@@ -643,86 +716,92 @@ private void xl_styles(){
     log("RootElement: "+root.getName());
     Element borders=root.element("borders");
     borderCount=Integer.parseInt(borders.attributeValue("count"));
-    borderCount++;
-    borders.remove(borders.attribute("count"));
-    borders.addAttribute("count",""+borderCount);
-    Element border=borders.addElement("border");
-    Element left=border.addElement("left").addAttribute("style","thin");
-    Element right=border.addElement("right").addAttribute("style","thin");
-    Element top=border.addElement("top").addAttribute("style","thin");
-    Element bottom=border.addElement("bottom").addAttribute("style","thin");
-    left.addElement("color").addAttribute("auto","1");
-    right.addElement("color").addAttribute("auto","1");
-    top.addElement("color").addAttribute("auto","1");
-    bottom.addElement("color").addAttribute("auto","1");
-    border.addElement("diagonal");
+    if (!generatedByThis){
+        borderCount++;
+        borders.remove(borders.attribute("count"));
+        borders.addAttribute("count",""+borderCount);
+        Element border=borders.addElement("border");
+        Element left=border.addElement("left").addAttribute("style","thin");
+        Element right=border.addElement("right").addAttribute("style","thin");
+        Element top=border.addElement("top").addAttribute("style","thin");
+        Element bottom=border.addElement("bottom").addAttribute("style","thin");
+        left.addElement("color").addAttribute("auto","1");
+        right.addElement("color").addAttribute("auto","1");
+        top.addElement("color").addAttribute("auto","1");
+        bottom.addElement("color").addAttribute("auto","1");
+        border.addElement("diagonal");
+    }
     Element fills=root.element("fills");
     //if (fills==null)fills=root.addElement("fills").addAttribute("count","1");
     fillCount=Integer.parseInt(fills.attributeValue("count"));
-    fillCount++;
-    fills.remove(fills.attribute("count"));
-    fills.addAttribute("count",""+fillCount);
-    Element fill=fills.addElement("fill");
-    Element patternFill=fill.addElement("patternFill").addAttribute("patternType","none");
-    patternFill.addElement("bgColor").addAttribute("indexed","22");
+    if (!generatedByThis){
+        fillCount++;
+        fills.remove(fills.attribute("count"));
+        fills.addAttribute("count",""+fillCount);
+        Element fill=fills.addElement("fill");
+        Element patternFill=fill.addElement("patternFill").addAttribute("patternType","none");
+        patternFill.addElement("bgColor").addAttribute("indexed","23");
+        }
     Element fonts=root.element("fonts");
     if (fonts==null)fonts=root.addElement("fonts").addAttribute("count","2")
             .addAttribute("x14ac:knownFonts","1");
-    else{
-        fontCount=Integer.parseInt(fonts.attributeValue("count"));
+    fontCount=Integer.parseInt(fonts.attributeValue("count"));
+    if (!generatedByThis){
         fontCount=fontCount+3;
         fonts.remove(fonts.attribute("count"));
         fonts.addAttribute("count",""+fontCount);
+        Element font=fonts.addElement("font");
+        font.addElement("b");
+        font.addElement("sz").addAttribute("val","14");
+        font.addElement("color").addAttribute("indexed","8");
+        font.addElement("name").addAttribute("val","Arial");
+        font=fonts.addElement("font");
+        font.addElement("b");
+        font.addElement("sz").addAttribute("val","10");
+        font.addElement("color").addAttribute("indexed","8");
+        font.addElement("name").addAttribute("val","Arial");
+        font=fonts.addElement("font");
+        font.addElement("sz").addAttribute("val","10");
+        font.addElement("color").addAttribute("indexed","8");
+        font.addElement("name").addAttribute("val","Arial");
     }
-    Element font=fonts.addElement("font");
-    font.addElement("b");
-    font.addElement("sz").addAttribute("val","14");
-    font.addElement("color").addAttribute("indexed","8");
-    font.addElement("name").addAttribute("val","Arial");
-    font=fonts.addElement("font");
-    font.addElement("b");
-    font.addElement("sz").addAttribute("val","10");
-    font.addElement("color").addAttribute("indexed","8");
-    font.addElement("name").addAttribute("val","Arial");
-    font=fonts.addElement("font");
-    font.addElement("sz").addAttribute("val","10");
-    font.addElement("color").addAttribute("indexed","8");
-    font.addElement("name").addAttribute("val","Arial");
     Element numFmts=root.element("numFmts");
     if (numFmts==null)numFmts=root.addElement("numFmts").addAttribute("count","2");
-    else {
-        numFmtCount=Integer.parseInt(numFmts.attributeValue("count"));
-        numFmtCount++;
-        numFmtCount++;
+    numFmtCount=Integer.parseInt(numFmts.attributeValue("count"));
+    if (!generatedByThis){
+        numFmtCount=numFmtCount+2;
         numFmts.remove(numFmts.attribute("count"));
         numFmts.addAttribute("count",""+numFmtCount);
     }
     int id=163,fmtid;
     for (Iterator<Element> it = numFmts.elementIterator("numFmt"); it.hasNext();) {
-        Element fmt=it.next();
-        fmtid=Integer.parseInt(fmt.attributeValue("numFmtId"));
-        if (id<fmtid)id=fmtid;
-        }    
-    id++;
-    Element numFmt=numFmts.addElement("numFmt").addAttribute("numFmtId",""+id)
+            Element fmt=it.next();
+            fmtid=Integer.parseInt(fmt.attributeValue("numFmtId"));
+            if (id<fmtid)id=fmtid;
+            }    
+    if (!generatedByThis){
+        id++;
+        Element numFmt=numFmts.addElement("numFmt").addAttribute("numFmtId",""+id)
             .addAttribute("formatCode","[$-F400]h:mm:ss\\ AM/PM");
-    id++;
-    numFmt=numFmts.addElement("numFmt").addAttribute("numFmtId",""+id)
+        id++;
+        numFmt=numFmts.addElement("numFmt").addAttribute("numFmtId",""+id)
             .addAttribute("formatCode","yyyy/mm/dd\\ hh:mm:ss");
+        }
     Element xfs=root.element("cellXfs");
     xfsCount=Integer.parseInt(xfs.attributeValue("count"));
-    xfsCount=xfsCount+5;
-    xfs.remove(xfs.attribute("count"));
-    xfs.addAttribute("count",""+xfsCount);
+    if (!generatedByThis){
+        xfsCount=xfsCount+6;
+        xfs.remove(xfs.attribute("count"));
+        xfs.addAttribute("count",""+xfsCount);
     //Cím cella
-    Element xf=xfs.addElement("xf").addAttribute("numFmtId","0")
+        Element xf=xfs.addElement("xf").addAttribute("numFmtId","0")
             .addAttribute("fontId",""+(fontCount-3)) //bold
             .addAttribute("fillId","0") //default
             .addAttribute("borderId","0") //default
             .addAttribute("xfId","0")
             .addAttribute("applyBorder","0");
   //Fejléc cella
-    xf=xfs.addElement("xf").addAttribute("numFmtId","0")
+        xf=xfs.addElement("xf").addAttribute("numFmtId","0")
             .addAttribute("fontId",""+(fontCount-2)) //bold
             .addAttribute("fillId",""+(fillCount-1)) //szürke
             .addAttribute("borderId",""+(borderCount-1)) //keretezett
@@ -730,7 +809,7 @@ private void xl_styles(){
             .addAttribute("applyBorder","1");
     //xf.addElement("alignment").addAttribute("horizontal","center"); //középre igazított
     // Adatcella String vagy sima szám
-    xf=xfs.addElement("xf").addAttribute("numFmtId","0")
+        xf=xfs.addElement("xf").addAttribute("numFmtId","0")
             .addAttribute("fontId",""+(fontCount-1)) //normal
             .addAttribute("fillId","0") //default
             .addAttribute("borderId",""+(borderCount-1)) //keretezett
@@ -738,7 +817,7 @@ private void xl_styles(){
             .addAttribute("applyBorder","1");
     //xf.addElement("alignment").addAttribute("horizontal","left"); //balra igazított
     // Adatcella dátum
-    xf=xfs.addElement("xf").addAttribute("numFmtId","14") //yyyy-mm-dd
+        xf=xfs.addElement("xf").addAttribute("numFmtId","14") //yyyy-mm-dd
             .addAttribute("fontId",""+(fontCount-1)) //normal
             .addAttribute("fillId","0") //default
             .addAttribute("borderId",""+(borderCount-1)) //keretezett
@@ -747,7 +826,7 @@ private void xl_styles(){
             .addAttribute("applyBorder","1");
     //xf.addElement("alignment").addAttribute("horizontal","right"); //jobbra igazított
     // Adatcella idõ
-    xf=xfs.addElement("xf").addAttribute("numFmtId",""+(id-1)) //hh:mm:ss
+        xf=xfs.addElement("xf").addAttribute("numFmtId",""+(id-1)) //hh:mm:ss
             .addAttribute("fontId",""+(fontCount-1)) //normal
             .addAttribute("fillId","0") //default
             .addAttribute("borderId",""+(borderCount-1)) //keretezett
@@ -756,20 +835,22 @@ private void xl_styles(){
             .addAttribute("applyBorder","1");
     //xf.addElement("alignment").addAttribute("horizontal","right"); //jobbra igazított
     // Adatcella dátumidõ
-    xf=xfs.addElement("xf").addAttribute("numFmtId",""+(id)) //yyyy-mm-dd hh:mm:ss
+        xf=xfs.addElement("xf").addAttribute("numFmtId",""+(id)) //yyyy-mm-dd hh:mm:ss
             .addAttribute("fontId",""+(fontCount-1)) //normal
             .addAttribute("fillId","0") //default
             .addAttribute("borderId",""+(borderCount-1)) //keretezett
             .addAttribute("xfId","0")
             .addAttribute("applyNumberFormat","1")
             .addAttribute("applyBorder","1");
+    
     //xf.addElement("alignment").addAttribute("horizontal","right"); //jobbra igazított
-    OutputFormat format = OutputFormat.createPrettyPrint();
-    XMLWriter writer;
-    FileWriter fw=new FileWriter(ct);
-    writer = new XMLWriter(fw,format);
-    writer.write( document );
-    writer.close();
+        OutputFormat format = OutputFormat.createPrettyPrint();
+        XMLWriter writer;
+        FileWriter fw=new FileWriter(ct);
+        writer = new XMLWriter(fw,format);
+        writer.write( document );
+        writer.close();
+    }
     }
     catch(Exception e){
         e.printStackTrace(log);
